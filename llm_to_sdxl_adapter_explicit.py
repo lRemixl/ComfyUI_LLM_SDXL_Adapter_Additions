@@ -67,18 +67,17 @@ class ExplicitMultiheadAttention(nn.Module):
             return output, None
 
     def scaled_dot_product_attention(self, q, k, v, mask=None):
-        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / (self.head_dim ** 0.5)
+        bool_mask = None
         if mask is not None:
-            # The mask shape is (batch_size, seq_len)
-            # We need to broadcast it to (batch_size, num_heads, seq_len, seq_len)
-            # The mask is True for padded tokens, so we fill with -inf
-            attn_scores = attn_scores.masked_fill(mask.unsqueeze(1).unsqueeze(2), float('-inf'))
-        
-        attn_probs = F.softmax(attn_scores, dim=-1)
-        attn_probs = self.dropout(attn_probs)
-        
-        output = torch.matmul(attn_probs, v)
-        return output, attn_probs
+            # current mask is True for padding, so we invert it for pytorch's SDPA
+            bool_mask = ~(mask.unsqueeze(1).unsqueeze(2).bool())
+            
+        output = F.scaled_dot_product_attention(
+            q, k, v,
+            attn_mask=bool_mask,
+            dropout_p=self.dropout.p if self.training else 0.0,
+        )
+        return output, None
 
 
 class TransformerBlock(nn.Module):
